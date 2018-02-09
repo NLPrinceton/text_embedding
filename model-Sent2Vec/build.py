@@ -63,8 +63,8 @@ def get_embeddings_for_preprocessed_sentences(sentences, model_path, fasttext_ex
         - fasttext_exec_path: a path to the fasttext executable
     """
     timestamp = str(time.time())
-    test_path = NLPDATA+'NLPrinceton/DisC/sent2vec/'+timestamp+'_fasttext.test.txt'
-    embeddings_path = NLPDATA+'NLPrinceton/DisC/sent2vec/'+timestamp+'_fasttext.embeddings.txt'
+    test_path = NLPDATA+'sent2vec/'+timestamp+'_fasttext.test.txt'
+    embeddings_path = NLPDATA+'sent2vec/'+timestamp+'_fasttext.embeddings.txt'
     dump_text_to_disk(test_path, sentences)
     call(fasttext_exec_path+
           ' print-sentence-vectors '+

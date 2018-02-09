@@ -70,13 +70,14 @@ def feature_vocab(documents, min_count=1, sorted_features=sorted):
   return {feat: i for i, feat in enumerate(sorted_features(feat for feat, count in feature_counts(documents).items() if count >= min_count))}
 
 
-def docs2bofs(documents, vocabulary=None, weights=None, default=1.0, **kwargs):
+def docs2bofs(documents, vocabulary=None, weights=None, default=1.0, format='csr', **kwargs):
   '''constructs sparse BoF representations from featurized documents
   Args:
     documents: iterable of lists of hashable features
     vocabulary: dict mapping features to indices (nonnegative ints) or a list of features; if None will compute automatically from documents
     weights: dict mapping features to weights (floats) or a list/np.ndarray of weights; if None will compute unweighted BoFs
     default: default feature weight if not feature in weights; ignored if weights is None
+    format: sparse matrix format
     kwargs: passed to feature_vocab; ignored if not vocabulary is None
   Returns:
     sparse BoF matrix in CSR format of size (len(documents), len(vocabulary))
@@ -91,7 +92,7 @@ def docs2bofs(documents, vocabulary=None, weights=None, default=1.0, **kwargs):
   m = len(documents)
   V = len(vocabulary)
   if weights is None:
-    return sp.coo_matrix((values, (rows, cols)), shape=(m, V), dtype=UINT).tocsr()
+    return sp.coo_matrix((values, (rows, cols)), shape=(m, V), dtype=UINT).asformat(format)
   bofs = sp.coo_matrix((values, (rows, cols)), shape=(m, V)).tocsr()
 
   if type(weights) == dict:
@@ -104,18 +105,22 @@ def docs2bofs(documents, vocabulary=None, weights=None, default=1.0, **kwargs):
       diag = np.array(weights)
     else:
       diag = weights
-  return bofs.dot(sp.diags(diag, 0))
+  return bofs.dot(sp.diags(diag, 0)).asformat(format)
 
 
-def sif_weights(documents, a=1E-2):
+def sif_weights(documents_or_counts, a=1E-2):
   '''computes SIF weights from featurized documents
   Args:
-    documents: iterable of lists of hashable features
+    documents_or_counts: iterable of lists of hashable features or dict mapping features to counts or count vector
     a: SIF parameter
   Returns:
-    dict mapping features to weights (floats)
+    if passed documents of count dict: dict mapping features to weights (floats); else a weight vector
   '''
 
-  counts = feature_counts(documents)
-  axtotal = a*sum(counts.values())
-  return {feat: axtotal/(axtotal+count) for feat, count in counts.items()}
+  if type(documents_or_counts) == np.ndarray:
+    axtotal = a*sum(documents_or_counts)
+    return axtotal/(axtotal+documents_or_counts) 
+  if type(documents_or_counts) == list:
+    documents_or_counts = feature_counts(documents)
+  axtotal = a*sum(documents_or_counts.values())
+  return {feat: axtotal/(axtotal+count) for feat, count in documents_or_counts.items()}
