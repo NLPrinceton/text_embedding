@@ -50,8 +50,8 @@ def circular_conv(cooc, w2v):
   return np.real(ifft(output))
 
 
-def DisC(n, composition, scaling=True, corpus='Amazon', objective='GloVe', dimension=1600):
-  prepare = lambda documents: (vocab2vecs({word for doc in documents for word in split_on_punctuation(doc.lower())}, corpus=corpus, objective=objective, dimension=dimension), np.zeros(dimension))
+def DisC(n, composition, scaling=True, vectorfile=None, corpus='Amazon', objective='GloVe', dimension=1600):
+  prepare = lambda documents: (vocab2vecs({word for doc in documents for word in split_on_punctuation(doc.lower())}, vectorfile=vectorfile, corpus=corpus, objective=objective, dimension=dimension), np.zeros(dimension))
   compose = {'mult': pointwise_mult, 'conv': circular_conv}[composition]
   def represent(documents, w2v, z):
     docs = tokenize(doc.lower() for doc in documents)

@@ -22,8 +22,8 @@ def BonG(n, min_count=1):
   return represent, prepare, True
 
 
-def SIF(a, corpus='Amazon', objective='GloVe', dimension=1600):
-  prepare = lambda documents: (vocab2vecs({word for doc in documents for word in split_on_punctuation(doc.lower())}, corpus=corpus, objective=objective, dimension=dimension), [True, None])
+def SIF(a, vectorfile=None, corpus='Amazon', objective='GloVe', dimension=1600):
+  prepare = lambda documents: (vocab2vecs({word for doc in documents for word in split_on_punctuation(doc.lower())}, vectorfile=vectorfile, corpus=corpus, objective=objective, dimension=dimension), [True, None])
   def represent(documents, w2v, weights):
     docs = tokenize(doc.lower() for doc in documents)
     if weights[0]:
