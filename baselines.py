@@ -6,6 +6,7 @@ from text_embedding.features import *
 from text_embedding.vectors import *
 
 
+# NOTE: filepath for Amazon GloVe embeddings goes here
 VECTORFILES[('Amazon', 'GloVe', 1600)] = '/n/fs/nlpdatasets/AmazonProductData/amazon_glove1600.txt'
 
 
