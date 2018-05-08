@@ -166,4 +166,3 @@ def _get_sentence_embeddings(sentences, ngram='bigrams', model='concat_wiki_twit
     elif model == "concat_wiki_twitter":
         return np.concatenate((wiki_embeddings, twitter_embbedings), axis=1)
     sys.exit(-1)
-
