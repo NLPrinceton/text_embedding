@@ -1,15 +1,15 @@
 import numpy as np
 from numpy.linalg import norm
+from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import normalize
 
 
 FLOAT = np.float32
-
 # NOTE: filepath for Common Crawl GloVe embeddings goes here
 VECTORFILES = {('CC', 'GloVe', 300): '/n/fs/nlpdatasets/glove.840B/glove.840B.300d.txt'}
 
 
-# NOTE: Some files have 2d numbers on each line, with the last d of them being meaningless; avoid loading them by setting dimension=d
+# NOTE: Some files have 2d or 2d+2 numbers on each line, with the last d of them being meaningless; avoid loading them by setting dimension=d
 def load(vectorfile, vocabulary=None, dimension=None):
   '''generates word embeddings from file
   Args:
@@ -139,3 +139,50 @@ def docs2vecs(documents, f2v=None, weights=None, default=1.0, avg=False, **kwarg
   if avg:
     return np.vstack(sum((f2v.get(feat, z) for feat in document), z) / max(1.0, len(document)) for document in documents)
   return np.vstack(sum((f2v.get(feat, z) for feat in document), z) for document in documents)
+
+
+def align_vocab(func):
+  '''wrapper to align vocab to allow word-to-vector dict inputs to functions taking two word-vector matrices as inputs
+  '''
+
+  def wrapper(X, Y, **kwargs):
+    assert type(X) == type(Y), "first two arguments must be the same type"
+    if type(X) == dict:
+      vocab = sorted(set(X.keys()).intersection(Y.keys()))
+      X = np.vstack(X[w] for w in vocab)
+      Y = np.vstack(Y[w] for w in vocab)
+    else:
+      assert type(X) == np.ndarray, "first two arguments must be 'dict' or 'numpy.ndarray'"
+    return func(X, Y, **kwargs)
+
+  return wrapper
+
+
+@align_vocab
+def best_transform(source, target, orthogonal=True):
+  '''computes best matrix between two sets of word embeddings in terms of least-squares error
+  Args:
+    source: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as target
+    target: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as source
+    orthogonal: if True constrains best transform to be orthogonal
+  Returns:
+    numpy array of size (dimension, dimension)
+  '''
+
+  if orthogonal:
+    raise(NotImplementedError)
+
+  return LinearRegression(fit_intercept=False).fit(source, target).coef_ 
+
+
+@align_vocab
+def average_cosine_similarity(X, Y):
+  '''computes the average cosine similarity between two sets of word embeddings
+  Args:
+    X: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as target
+    Y: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as source
+  Returns:
+    average cosine similarity as a float
+  '''
+
+  return np.mean((normalize(X) * normalize(Y)).sum(1))
