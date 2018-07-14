@@ -46,6 +46,17 @@ def ranksize(comm=None):
   return comm.rank, comm.size
 
 
+def isroot(comm=None):
+  '''checks whether process is root process
+  Args:
+    comm: MPI Communicator
+  Returns:
+    bool
+  '''
+
+  return comm is None or not comm.rank
+
+
 def checkpoint(comm=None):
   '''waits until all processes have reached this point
   Args:
@@ -296,9 +307,25 @@ def mrpc(partitions=['train', 'test']):
   return [mrpc(partition) for partition in partitions]
 
 
+def sts(partitions=['train', 'test']):
+  '''loads data for STS 2012-2017 collected sentence similarity tasks
+  Args:
+    partitions: component(s) of data to load; can be a string (for one partition) or list of strings
+  Returns:
+    ((list of documents, list of documents, list of labels) for each partition)
+  '''
+
+  if type(partitions) == str:
+    with open(DOCUMENTS + 'sts-' + partitions + '.csv', 'r') as f:
+      if PYTHONVERSION == '3':
+        return list(zip(*((row[5], row[6], row[4]) for row in (line.strip().split('\t') for line in f))))
+      return list(zip(*((txt2unicode(row[5]), txt2unicode(row[6]), row[4]) for row in (line.strip().split('\t') for line in f))))
+  return [sts(partition) for partition in partitions]
+
+
 TASKMAP = {'train-test split': {'sst': sst, 'sst_fine': sst_fine, 'imdb': imdb, 'ng': ng, 'trec': trec},
            'cross-validation': {'mr': mr, 'cr': cr, 'subj': subj, 'mpqa': mpqa},
-           'pairwise task': {'sick_e': sick_e, 'sick_r': sick_r, 'mrpc': mrpc}}
+           'pairwise task': {'sick_e': sick_e, 'sick_r': sick_r, 'mrpc': mrpc, 'sts': sts}}
 
 
 def batched_build(documents, transform, info=(), root='', batchsize=None):
@@ -401,7 +428,7 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
     Xtest= np.hstack([abs(Xtest[:m]-Xtest[m:]), Xtest[:m]*Xtest[m:]])
     if verbose:
       write('\rCross-Validating and Fitting '+task.upper()+10*' ')
-    if task == 'sick_r':
+    if task in {'sick_r', 'sts'}:
       Ytrain = np.array([float(y) for y in ltrain])
       Ytest = np.array([float(y) for y in ltest])
       reg = RidgeCV(alphas=params, fit_intercept=intercept)
