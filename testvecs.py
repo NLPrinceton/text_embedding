@@ -1,14 +1,21 @@
 import argparse
 import sys
+from collections import Counter
 import numpy as np
 from text_embedding.documents import *
 from text_embedding.features import *
 from text_embedding.vectors import *
 
 
-def vecteval(w2v, task, n_jobs=-1):
+def unigram_baseline(w2v, task, n_jobs=-1, sif=False):
   z = np.zeros(w2v[next(iter(w2v))].shape[0])
-  rep = lambda docs: np.vstack(sum((w2v.get(w, z) for w in split_on_punctuation(doc.lower())), z) for doc in docs)
+  if sif:
+    def rep(docs):
+      docs = [[w for w in split_on_punctuation(doc.lower())] for doc in docs]
+      wei = sif_weights(Counter(w for doc in docs for w in doc))
+      return np.vstack(sum((wei.get(w, 0.0)*w2v.get(w, z) for w in docs), z) for doc in docs)
+  else:
+    rep = lambda docs: np.vstack(sum((w2v.get(w, z) for w in split_on_punctuation(doc.lower())), z) for doc in docs)
   return evaluate(task.lower(), rep, invariant=True, params=[10**i for i in range(-4, 5)], n_jobs=n_jobs)
 
 
