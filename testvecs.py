@@ -6,10 +6,10 @@ from text_embedding.features import *
 from text_embedding.vectors import *
 
 
-def document_classification(w2v, task):
+def vecteval(w2v, task, n_jobs=-1):
   z = np.zeros(w2v[next(iter(w2v))].shape[0])
   rep = lambda docs: np.vstack(sum((w2v.get(w, z) for w in split_on_punctuation(doc.lower())), z) for doc in docs)
-  return evaluate(task.lower(), rep, invariant=True, params=[10**i for i in range(-4, 5)])
+  return evaluate(task.lower(), rep, invariant=True, params=[10**i for i in range(-4, 5)], n_jobs=n_jobs)
 
 
 @align_vocab

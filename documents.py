@@ -4,6 +4,7 @@ import sys
 import unicodedata
 import nltk
 import numpy as np
+from numpy.linalg import norm
 from scipy.stats import pearsonr
 from scipy.stats import spearmanr
 from sklearn.datasets import fetch_20newsgroups
@@ -11,6 +12,7 @@ from sklearn.linear_model import LogisticRegressionCV as LogitCV
 from sklearn.linear_model import RidgeCV
 from sklearn.metrics import f1_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import normalize
 
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__)) + '/'
@@ -421,19 +423,33 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
     root = '\rBuilding '+task.upper()+' Train' if verbose else ''
     Xtrain = batched_build(d1train+d2train, represent, info, root, batchsize)
     m = int(Xtrain.shape[0]/2)
-    Xtrain = np.hstack([abs(Xtrain[:m]-Xtrain[m:]), Xtrain[:m]*Xtrain[m:]])
+    if task == 'sts':
+      Ptrain = np.zeros(m)
+      nz = norm(Xtrain[:m], axis=1) * norm(Xtrain[m:], axis=1) > 0.0
+      Ptrain[nz] = np.sum(normalize(Xtrain[:m][nz]) * normalize(Xtrain[m:][nz]), axis=1)
+    else:
+      Xtrain = np.hstack([abs(Xtrain[:m]-Xtrain[m:]), Xtrain[:m]*Xtrain[m:]])
     root = '\rBuilding '+task.upper()+' Test' if verbose else ''
     Xtest = batched_build(d1test+d2test, represent, info, root, batchsize)
     m = int(Xtest.shape[0]/2)
-    Xtest= np.hstack([abs(Xtest[:m]-Xtest[m:]), Xtest[:m]*Xtest[m:]])
+    if task == 'sts':
+      Ptest = np.zeros(m)
+      nz = norm(Xtest[:m], axis=1) * norm(Xtest[m:], axis=1) > 0.0
+      Ptest[nz] = np.sum(normalize(Xtest[:m][nz]) * normalize(Xtest[m:][nz]), axis=1)
+    else:
+      Xtest= np.hstack([abs(Xtest[:m]-Xtest[m:]), Xtest[:m]*Xtest[m:]])
     if verbose:
       write('\rCross-Validating and Fitting '+task.upper()+10*' ')
     if task in {'sick_r', 'sts'}:
-      Ytrain = np.array([float(y) for y in ltrain])
-      Ytest = np.array([float(y) for y in ltest])
-      reg = RidgeCV(alphas=params, fit_intercept=intercept)
-      reg.fit(Xtrain, Ytrain)
-      P = reg.predict(Xtest)
+      if task == 'sts':
+        Ytest = np.array([float(y) for y in ltrain+ltest])
+        P = np.concatenate([Ptrain, Ptest])
+      else:
+        Ytrain = np.array([float(y) for y in ltrain])
+        Ytest = np.array([float(y) for y in ltest])
+        reg = RidgeCV(alphas=params, fit_intercept=intercept)
+        reg.fit(Xtrain, Ytrain)
+        P = reg.predict(Xtest)
       r = 100.0*pearsonr(Ytest, P)[0]
       rho = 100.0*spearmanr(Ytest, P)[0]
       if verbose:
