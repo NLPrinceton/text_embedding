@@ -1,12 +1,13 @@
 import argparse
 import sys
+from collections import Counter
 import numpy as np
 from text_embedding.documents import *
 from text_embedding.features import *
 from text_embedding.vectors import *
 
 
-def vecteval(w2v, task, n_jobs=-1):
+def unigram_baseline(w2v, task, n_jobs=-1):
   z = np.zeros(w2v[next(iter(w2v))].shape[0])
   rep = lambda docs: np.vstack(sum((w2v.get(w, z) for w in split_on_punctuation(doc.lower())), z) for doc in docs)
   return evaluate(task.lower(), rep, invariant=True, params=[10**i for i in range(-4, 5)], n_jobs=n_jobs)
@@ -38,7 +39,7 @@ if __name__ == '__main__':
     write('\rClassification Evaluation: Test Accuracy using Logit over Sum-of-Embeddings\n')
     for task in ['SST', 'IMDB']:
       write(task+' Acc: ')
-      write(str(document_classification(w2v, task.lower())[1]) + '\n')
+      write(str(unigram_baseline(w2v, task.lower())[1]) + '\n')
 
   else:
     write('Loading Source Embeddings')

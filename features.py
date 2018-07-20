@@ -124,6 +124,6 @@ def sif_weights(documents_or_counts, a=1E-2):
     axtotal = a*sum(documents_or_counts)
     return axtotal/(axtotal+documents_or_counts) 
   if type(documents_or_counts) == list:
-    documents_or_counts = feature_counts(documents)
+    documents_or_counts = feature_counts(documents_or_counts)
   axtotal = a*sum(documents_or_counts.values())
   return {feat: axtotal/(axtotal+count) for feat, count in documents_or_counts.items()}
