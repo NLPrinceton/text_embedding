@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
+from scipy.linalg import svd
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import normalize
 
@@ -141,6 +142,27 @@ def docs2vecs(documents, f2v=None, weights=None, default=1.0, avg=False, **kwarg
   return np.vstack(sum((f2v.get(feat, z) for feat in document), z) for document in documents)
 
 
+class OrthogonalProcrustes:
+  '''sklearn-style class for solving the Orthogonal Procrustes problem
+  '''
+
+  def __init__(self):
+    pass
+
+  def fit(self, X, Y):
+    '''finds orthogonal matrix M minimizing |XM^T-Y|
+    Args:
+      X: numpy array of shape (n, d)
+      Y: numpy array of shape (n, d)
+    Returns:
+      self (with attribute coef_, a numpy array of shape (d, d)
+    '''
+
+    U, _, VT = svd(Y.T.dot(X))
+    self.coef_ = U.dot(VT)
+    return self
+
+
 def align_vocab(func):
   '''wrapper to align vocab to allow word-to-vector dict inputs to functions taking two word-vector matrices as inputs
   '''
@@ -170,7 +192,7 @@ def best_transform(source, target, orthogonal=True):
   '''
 
   if orthogonal:
-    raise(NotImplementedError)
+    return OrthogonalProcrustes().fit(source, target).coef_
 
   return LinearRegression(fit_intercept=False).fit(source, target).coef_ 
 
