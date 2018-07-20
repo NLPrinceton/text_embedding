@@ -1,3 +1,4 @@
+import h5py
 import numpy as np
 from numpy.linalg import norm
 from sklearn.linear_model import LinearRegression
@@ -13,31 +14,39 @@ VECTORFILES = {('CC', 'GloVe', 300): '/n/fs/nlpdatasets/glove.840B/glove.840B.30
 def load(vectorfile, vocabulary=None, dimension=None):
   '''generates word embeddings from file
   Args:
-    vectorfile: word embedding text file
+    vectorfile: word embedding text file or HDF5 file with keys 'words' and 'vectors'
     vocabulary: dict/set of strings, or int specifying number of words to load; if None loads all words from file
     dimension: number of dimensions to load
   Returns:
     (word, vector) generator
   '''
 
-  if vocabulary is None:
-    V = float('inf')
-  elif type(vocabulary) == int:
-    V = vocabulary
-    vocabulary = None
-  else:
-    V = len(vocabulary)
-
-  with open(vectorfile, 'r') as f:
-    n = 0
-    for line in f:
-      index = line.index(' ')
-      word = line[:index]
+  try:
+    f = h5py.File(vectorfile, 'r')
+    for word, vector in zip(f['words'], f['vectors']):
       if vocabulary is None or word in vocabulary:
-        yield word, np.array([FLOAT(entry) for entry in line[index+1:].split()[:dimension]])
-        n += 1
-      if n == V:
-        break
+        yield word, vector
+    f.close()
+
+  except OSError:
+    if vocabulary is None:
+      V = float('inf')
+    elif type(vocabulary) == int:
+      V = vocabulary
+      vocabulary = None
+    else:
+      V = len(vocabulary)
+
+    with open(vectorfile, 'r') as f:
+      n = 0
+      for line in f:
+        index = line.index(' ')
+        word = line[:index]
+        if vocabulary is None or word in vocabulary:
+          yield word, np.array([FLOAT(entry) for entry in line[index+1:].split()[:dimension]])
+          n += 1
+        if n == V:
+          break
 
 
 def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', objective='GloVe', dimension=300, unit=True):

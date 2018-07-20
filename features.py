@@ -2,13 +2,15 @@ from collections import Counter
 from itertools import chain
 from itertools import groupby
 from operator import itemgetter
-from string import punctuation
+#from string import punctuation
+from unicodedata import category
 import nltk
 import numpy as np
 from scipy import sparse as sp
 
 
-PUNCTUATION = set(punctuation)
+#PUNCTUATION = set(punctuation)
+PUNCTUATION = {'M', 'P', 'S'}
 UINT = np.uint16
 
 
@@ -26,7 +28,8 @@ def split_on_punctuation(document):
     else:
       chunk = token[0]
       for char0, char1 in zip(token[:-1], token[1:]):
-        if (char0 in PUNCTUATION) == (char1 in PUNCTUATION):
+        #if (char0 in PUNCTUATION) == (char1 in PUNCTUATION):
+        if (category(char0)[0] in PUNCTUATION) == (category(char1)[0] in PUNCTUATION):
           chunk += char1
         else:
           yield chunk
