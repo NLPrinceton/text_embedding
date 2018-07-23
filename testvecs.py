@@ -14,15 +14,18 @@ def unigram_baseline(w2v, task, n_jobs=-1):
 
 
 @align_vocab
-def linear_alignment(source, target, orthogonal=True):
-  transform = best_transform(source, target, orthogonal=orthogonal)
-  return average_cosine_similarity(source.dot(transform.T), target)
+def linear_alignment(source, target, orthogonal=True, fit_intercept=False):
+  M, b = best_transform(source, target, orthogonal=orthogonal, fit_intercept=fit_intercept)
+  return average_cosine_similarity(source.dot(M.T)+b, target)
 
 
 def parse():
   parser = argparse.ArgumentParser(prog='python text_embedding/testvecs.py')
-  parser.add_argument('vectorfiles', nargs='+', help='one or two word embedding text files (space-separated)', type=str)
+  parser.add_argument('vectorfiles', nargs='+', help='one or two word embedding text files (space-separated)')
   parser.add_argument('-d', '--dimension', default=None, help='embedding dimension (defaults to using entire row)', type=int)
+  parser.add_argument('-t', '--tasks', nargs='*', help='embedding evaluation tasks (space-separated)')
+  parser.add_argument('-o', '--orthogonal', action='store_true', help='compute best orthogonal transform')
+  parser.add_argument('-i', '--intercept', action='store_true', help='fit intercept')
   return parser.parse_args()
 
 
@@ -35,9 +38,10 @@ if __name__ == '__main__':
   if len(files) == 1:
     write('Loading Word Embeddings')
     w2v = vocab2vecs(vectorfile=files[0], dimension=d)
+    tasks = args.tasks if args.tasks else ['SST', 'IMDB']
 
     write('\rClassification Evaluation: Test Accuracy using Logit over Sum-of-Embeddings\n')
-    for task in ['SST', 'IMDB']:
+    for task in tasks:
       write(task+' Acc: ')
       write(str(unigram_baseline(w2v, task.lower())[1]) + '\n')
 
@@ -49,4 +53,4 @@ if __name__ == '__main__':
 
     write('\rAlignment Evaluation: Mean Cosine Similarity of Best Orthogonal Transform\n')
     write('Avg Sim: ')
-    write(str(linear_alignment(src, tgt, orthogonal=True)) + '\n')
+    write(str(linear_alignment(src, tgt, orthogonal=args.orthogonal, fit_intercept=args.intercept)) + '\n')

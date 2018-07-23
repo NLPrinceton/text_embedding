@@ -155,8 +155,8 @@ class OrthogonalProcrustes:
   '''sklearn-style class for solving the Orthogonal Procrustes problem
   '''
 
-  def __init__(self):
-    pass
+  def __init__(self, fit_intercept=False):
+    self.fit_intercept = fit_intercept
 
   def fit(self, X, Y):
     '''finds orthogonal matrix M minimizing |XM^T-Y|
@@ -167,8 +167,15 @@ class OrthogonalProcrustes:
       self (with attribute coef_, a numpy array of shape (d, d)
     '''
 
+    if self.fit_intercept:
+      Xbar, Ybar = np.mean(X, axis=0), np.mean(Y, axis=0)
+      X, Y = X-Xbar, Y-Ybar
     U, _, VT = svd(Y.T.dot(X))
     self.coef_ = U.dot(VT)
+    if self.fit_intercept:
+      self.intercept_ = Ybar - self.coef_.dot(Xbar)
+    else:
+      self.intercept_ = np.zeros(self.coef_.shape[0], dtype=self.coef_.dtype)
     return self
 
 
@@ -190,7 +197,7 @@ def align_vocab(func):
 
 
 @align_vocab
-def best_transform(source, target, orthogonal=True):
+def best_transform(source, target, orthogonal=True, fit_intercept=False):
   '''computes best matrix between two sets of word embeddings in terms of least-squares error
   Args:
     source: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as target
@@ -201,9 +208,10 @@ def best_transform(source, target, orthogonal=True):
   '''
 
   if orthogonal:
-    return OrthogonalProcrustes().fit(source, target).coef_
-
-  return LinearRegression(fit_intercept=False).fit(source, target).coef_ 
+    transform = OrthogonalProcrustes(fit_intercept=fit_intercept).fit(source, target)
+  else:
+    transform = LinearRegression(fit_intercept=fit_intercept).fit(source, target)
+  return transform.coef_, transform.intercept_
 
 
 @align_vocab
