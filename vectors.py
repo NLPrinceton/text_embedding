@@ -156,6 +156,13 @@ class OrthogonalProcrustes:
   '''
 
   def __init__(self, fit_intercept=False):
+    '''initializes object
+    Args:
+      fit_intercept: whether to find best transformation after translation
+    Returns:
+      None
+    '''
+
     self.fit_intercept = fit_intercept
 
   def fit(self, X, Y):
@@ -203,6 +210,7 @@ def best_transform(source, target, orthogonal=True, fit_intercept=False):
     source: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as target
     target: numpy array of size (len(vocabulary), dimension) or dict mapping words to vectors; must be same type as source
     orthogonal: if True constrains best transform to be orthogonal
+    fit_intercept: whether to find best transformation after translation
   Returns:
     numpy array of size (dimension, dimension)
   '''
@@ -211,7 +219,7 @@ def best_transform(source, target, orthogonal=True, fit_intercept=False):
     transform = OrthogonalProcrustes(fit_intercept=fit_intercept).fit(source, target)
   else:
     transform = LinearRegression(fit_intercept=fit_intercept).fit(source, target)
-  return transform.coef_.astype(target.dtype), transform.intercept_.astype(target.dtype)
+  return target.dtype(transform.coef_), target.dtype(transform.intercept_)
 
 
 @align_vocab
