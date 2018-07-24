@@ -211,7 +211,7 @@ def best_transform(source, target, orthogonal=True, fit_intercept=False):
     transform = OrthogonalProcrustes(fit_intercept=fit_intercept).fit(source, target)
   else:
     transform = LinearRegression(fit_intercept=fit_intercept).fit(source, target)
-  return transform.coef_, transform.intercept_
+  return transform.coef_.astype(target.dtype), transform.intercept_.astype(target.dtype)
 
 
 @align_vocab

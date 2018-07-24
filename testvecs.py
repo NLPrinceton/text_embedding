@@ -24,8 +24,6 @@ def parse():
   parser.add_argument('vectorfiles', nargs='+', help='one or two word embedding text files (space-separated)')
   parser.add_argument('-d', '--dimension', default=None, help='embedding dimension (defaults to using entire row)', type=int)
   parser.add_argument('-t', '--tasks', nargs='*', help='embedding evaluation tasks (space-separated)')
-  parser.add_argument('-o', '--orthogonal', action='store_true', help='compute best orthogonal transform')
-  parser.add_argument('-i', '--intercept', action='store_true', help='fit intercept')
   return parser.parse_args()
 
 
@@ -53,4 +51,16 @@ if __name__ == '__main__':
 
     write('\rAlignment Evaluation: Mean Cosine Similarity of Best Orthogonal Transform\n')
     write('Avg Sim: ')
-    write(str(linear_alignment(src, tgt, orthogonal=args.orthogonal, fit_intercept=args.intercept)) + '\n')
+    write(str(linear_alignment(src, tgt, orthogonal=True, fit_intercept=False)) + '\n')
+
+    write('\rAlignment Evaluation: Mean Cosine Similarity of Best Orthogonal Transform with Translation\n')
+    write('Avg Sim: ')
+    write(str(linear_alignment(src, tgt, orthogonal=True, fit_intercept=True)) + '\n')
+
+    write('\rAlignment Evaluation: Mean Cosine Similarity of Best Linear Transform\n')
+    write('Avg Sim: ')
+    write(str(linear_alignment(src, tgt, orthogonal=False, fit_intercept=False)) + '\n')
+
+    write('\rAlignment Evaluation: Mean Cosine Similarity of Best Linear Transform with Translation\n')
+    write('Avg Sim: ')
+    write(str(linear_alignment(src, tgt, orthogonal=False, fit_intercept=True)) + '\n')
