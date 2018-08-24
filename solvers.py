@@ -7,8 +7,8 @@ import struct
 from collections import Counter
 from collections import deque
 import numpy as np
-np.seterr(all='raise')
 import SharedArray as sa
+from numba import jit
 from scipy import sparse as sp
 from text_embedding.documents import *
 from text_embedding.testvecs import *
@@ -69,7 +69,7 @@ class GloVe:
 
         data /= xmax
         mask = data<1
-        data[mask] **= (alpha/2)
+        data[mask] **= alpha
         data[~mask] = 1.0
         self.weights = np.empty(self.ncooc, dtype=FLOAT)
         self.weights[:ncooc] = data
@@ -140,47 +140,24 @@ class GloVe:
 
         return sum(self.params[:2]) / 2.0
 
+    @staticmethod
+    @jit
+    def predict(i, j, wv, cv, wb, cb):
+        
+      return np.dot(wv[i].T, cv[j])+wb[i]+cb[j]
+
     def loss(self):
 
         row, col = self.row, self.col
-        wv, cv, wb, cb = self.params
         ncooc = self.ncooc
-        errors = np.fromiter((np.inner(wv[i], cv[j])+wb[i]+cb[j] for i, j in zip(row, col)), FLOAT, ncooc)
-        errors -= self.logcooc
-        errors *= self.weights
-        loss = norm(errors) ** 2
+        params = self.params
+        predict = self.predict
+        errors = np.fromiter((predict(i, j, *params) for i, j in zip(row, col)), FLOAT, ncooc) - self.logcooc
+        loss = np.inner(self.weights*errors, errors)
         if self._size > 1:
             ncooc = self._comm.allreduce(ncooc)
             loss = self._comm.reduce(loss/ncooc, root=0)
         return loss
-
-    def gradient(self):
-
-        row, col = self.row, self.col
-        wv, cv, wb, cb = self.params
-        errors = np.fromiter((np.inner(wv[i], cv[j])+wb[i]+cb[j] for i, j in zip(row, col)), FLOAT, self.ncooc)
-        errors -= self.logcooc
-        errors *= self.weights
-
-        V, d = self.V, self.d
-        errors *= 2.0*self.weights
-        E = sp.csr_matrix((errors, (row, col)), shape=(V, V), dtype=FLOAT)
-        grad_wv, grad_cv, grad_b = E.dot(cv), E.dot(wv), E.dot(np.ones(V, dtype=FLOAT))
-
-        comm, rank, size = self._comm, self._rank, self._size
-        if size > 1:
-            grads = []
-            for grad in [grad_wv, grad_cv, grad_b]:
-                if rank:
-                    grads.append(None)
-                else:
-                    grads.append(np.empty(grad.shape, dtype=FLOAT))
-                comm.Reduce(grad, grads[-1], root=0)
-            grads.append(grads[-1])
-        else:
-            grads = [grad_wv, grad_cv, grad_b, grad_b]
-
-        return grads
 
     def word_cooc_counts(self):
         
@@ -192,18 +169,20 @@ class GloVe:
             return output
         return array
 
-    def sgd_update(self, i, j, weight, logcooc, eta):
+    @staticmethod
+    @jit
+    def sgd_update(i, j, weight, logcooc, etax2, wv, cv, wb, cb):
         
-        wv, cv, wb, cb = self.params
         wvi, cvj, wbi, cbj = wv[i], cv[j], wb[i], cb[j]
-        root = weight * (np.inner(wvi, cvj) + wbi + cbj - logcooc)
-        coef = 2.0*weight*root*eta
-        updi, updj = coef*cvj, coef*wvi
-        wvi -= updi
-        cvj -= updj
+        error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+        werror = weight*error
+        coef = werror*etax2
+        upd = coef*cvj
+        cvj -= coef*wvi
+        wvi -= upd
         wbi -= coef
         cbj -= coef
-        return root * root
+        return werror * error
 
     def sgd(self, eta=0.01, epochs=25, seed=None, verbose=True, cumulative=True):
         '''runs SGD on GloVe objective
@@ -218,9 +197,11 @@ class GloVe:
         '''
 
         comm, rank, size = self._comm, self._rank, self._size
-        update = self.sgd_update
         shuffle = self._shuffle_cooc_data
+        update = self.sgd_update
+        params = self.params
         random.seed(seed)
+        etax2 = FLOAT(2.0*eta)
 
         if verbose:
             write('\rRunning '+str(epochs)+' Epochs of SGD with LR='+str(eta)+'\n', comm)
@@ -242,8 +223,8 @@ class GloVe:
 
             loss = 0.0
             for c, (i, j, wei, logx) in enumerate(zip(self.row, self.col, self.weights, self.logcooc)):
-                loss += update(i, j, wei, logx, eta)
-                if verbose and not (c+1)%100000:
+                loss += update(i, j, wei, logx, etax2, *params)
+                if verbose and not (c+1)%1000000:
                     write(epoch+'ETA '+str(round((self.ncooc-c-1)/(c+1)*(time.time()-t)+t0))+' sec'+int(np.log(self.ncooc))*' ', comm)
 
             if cumulative:
@@ -259,6 +240,51 @@ class GloVe:
         write('\r', comm)
 
 
+class SN(GloVe):
+
+    def __init__(self, *args, **kwargs):
+        
+        super().__init__(*args, **kwargs)
+
+    def __enter__(self):
+        
+        V, d = self.V, self.d
+        self._shared = []
+        self.params = [self._create_shared_zeros(shape) for shape in [(V, d), (1,)]]
+        np.random.seed(self.seed)
+        if not self._rank:
+            for param in self.params:
+                param += ((np.random.rand(*param.shape)-0.5)/d).astype(FLOAT)
+        checkpoint(self._comm)
+        return self
+
+    def embeddings(self):
+        
+        return self.params[0]
+
+    @staticmethod
+    @jit
+    def predict(i, j, wv, b):
+        
+        sumij = wv[i] + wv[j]
+        return np.dot(sumij.T, sumij) + b[0]
+
+    @staticmethod
+    @jit
+    def sgd_update(i, j, weight, logcooc, etax2, wv, b):
+        
+        wvi, wvj = wv[i], wv[j]
+        sumij = wvi + wvj
+        error = np.dot(sumij.T, sumij) + b[0] - logcooc
+        werror = weight*error
+        coef = werror*etax2
+        b -= coef
+        upd = 2.0*coef*sumij
+        wvi -= upd
+        wvj -= upd
+        return werror * error
+
+
 if __name__ == '__main__':
 
     try:
@@ -270,11 +296,11 @@ if __name__ == '__main__':
     with open(sys.argv[1], 'r') as f:
         vocab = [line.split()[0] for line in f]
 
-    V, d, epochs, interval = len(vocab), 300, 100, 10
+    V, d, epochs, interval = len(vocab), 300, 500, 50
 
     with GloVe(V, d, sys.argv[2], comm=comm) as g:
         for i in range(0, round(epochs/interval)):
-            g.sgd(epochs=interval)
+            g.sgd(epochs=interval, verbose=True)
             if not g._rank:
                 write('Epoch '+str((i+1)*interval)+' Evaluation\n')
                 w2v = dict(zip(vocab, g.embeddings()))
