@@ -1,12 +1,13 @@
 import argparse
+import os
 import random
 import sys
 import time
 import struct
 from collections import Counter
 from collections import deque
-from itertools import islice
 from operator import itemgetter
+from tempfile import NamedTemporaryFile as NTF
 import numpy as np
 import SharedArray as sa
 from numba import jit
@@ -17,7 +18,8 @@ from text_embedding.documents import *
 
 FLOAT = np.float32
 INT = np.uint32
-CHUNK = 10000000
+CHUNK = 1000000
+STORE = 10*CHUNK
 FMT = 'iif'
 NBYTES = 12
 
@@ -73,6 +75,23 @@ def doc2cooc(indices, recip_dist, window_size, V):
         start += i >= window_size
     return row, col, val
 
+def counts2bin(counts, f):
+
+    for (i, j), v in counts.items():
+        f.write(struct.pack(FMT, i, j, v))
+
+def bin2counts(f, counts, subset):
+
+    position = f.tell()
+    ncooc = int((f.seek(0, 2)-position)/NBYTES)
+    f.seek(position)
+
+    for cooc in range(ncooc):
+        i, j, v = struct.unpack(FMT, f.read(NBYTES))
+        if i in subset:
+            counts[(i, j)] += v
+
+# NOTE: Result is highly non-random and contains only upper triangular entries
 def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, comm=None):
     '''counts word cooccurrence in a corpus
     Args:
@@ -91,38 +110,80 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, co
         word2index = {line.split()[0]: INT(i) for i, line in enumerate(f)}
     recip_dist = np.fromiter((1.0/d for d in reversed(range(1, window_size+1))), FLOAT, window_size)
     V = INT(len(word2index))
+    counts = Counter()
     if verbose:
         write('\rCounting Cooccurrences with Window Size '+str(window_size)+'\n', comm)
         lines = 0
         t = time.time()
 
-    with open(corpusfile, 'r') as f:
-        counts = Counter()
-        while True:
-            v = FLOAT(0.0)
-            for doc in (line.split() for i, line in enumerate(islice(f, CHUNK)) if i%size == rank):
+    if size > 1:
+        random.seed(0)
+        idx = list(range(V))
+        random.shuffle(idx)
+        start, stop = int(rank/size*V), int((rank+1)/size*V)
+        subset = set(idx[start:stop])
+        positions = [0]*size
+        with open(corpusfile, 'r') as f:
+            n = 0
+            while True:
+                v = None
+                with NTF() as tmp:
+                    dump = Counter()
+                    files = comm.allgather(tmp.name)
+                    for k, line in enumerate(f):
+                        if k%size == rank:
+                            doc = line.split()
+                            for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), recip_dist, window_size, V)):
+                                if i in subset:
+                                    counts[(i, j)] += v
+                                else:
+                                    dump[(i, j)] += v
+                        if not (k+1)%CHUNK:
+                            counts2bin(dump, tmp)
+                            dump = Counter()
+                            if verbose:
+                                write('\rProcessed '+str(n+k+1)+' Lines, Time='+str(round(time.time()-t))+' sec', comm)
+                        if not (k+1)%STORE:
+                            n += k+1
+                            break
+                    counts2bin(dump, tmp)
+                    tmp.flush()
+                    for k in range(2):
+                        for i, name in enumerate(files):
+                            if i != rank:
+                                with open(name, 'rb') as g:
+                                    g.seek(positions[i])
+                                    bin2counts(g, counts, subset)
+                                    positions[i] = g.tell() * (k == 0)
+                        checkpoint(comm)
+                        if verbose:
+                            write('\rProcessed '+str(n)+' Lines, Time='+str(round(time.time()-t))+' sec', comm)
+                if not comm.allreduce(int(not v is None)):
+                    break
+        if verbose:
+            write('\rCounted '+str(comm.allreduce(len(counts.items())))+' Cooccurrences, Time='+str(round(time.time()-t))+' sec\n', comm)
+        for k in range(size):
+            if k == rank:
+                mode = 'ab' if rank else 'wb'
+                with open(coocfile, mode) as f:
+                    counts2bin(counts, f)
+            checkpoint(comm)
+
+    else:
+        with open(corpusfile, 'r') as f:
+            for k, line in enumerate(f):
+                doc = line.split()
                 for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), recip_dist, window_size, V)):
                     counts[(i, j)] += v
-            if size > 1:
-                if not comm.allreduce(v):
-                    break
-                counts = comm.reduce(counts, root=0)
-                if rank:
-                    counts = Counter()
-            if not v:
-                break
-            if verbose:
-                lines += CHUNK
-                write('\rProcessed '+str(lines)+' Lines, Time='+str(round(time.time()-t))+' sec', comm)
-
-    if not rank:
-        write('\rCounted '+str(len(counts.items()))+' Cooccurrences, Time='+str(round(time.time()-t))+' sec\n')
+                if verbose and not (k+1)%CHUNK:
+                    write('\rProcessed '+str(k+1)+' Lines, Time='+str(round(time.time()-t))+' sec')
+        if verbose:
+            write('\rCounted '+str(len(counts.items()))+' Cooccurrences, Time='+str(round(time.time()-t))+' sec\n')
         with open(coocfile, 'wb') as f:
-            for (a, b), c in counts.items():
-                f.write(struct.pack(FMT, a, b, c))
-    checkpoint(comm)
+            counts2bin(counts, f)
 
 
+# NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class SharedArrayManager:
 
     _shared = []
@@ -202,6 +263,7 @@ def symcooc(coocfile, comm=None):
     return values, rowdata, coldata
 
 
+# NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class GloVe(SharedArrayManager):
 
     def _load_cooc_data(self, coocfile, alpha, xmax):
@@ -352,6 +414,7 @@ class GloVe(SharedArrayManager):
                 t = time.time()
 
 
+# NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class SN(GloVe):
 
     @staticmethod
@@ -397,6 +460,7 @@ class SN(GloVe):
         return loss / ncooc
 
 
+# NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class RegularizedGloVe(GloVe):
 
     def _word_cooc_counts(self, V):
@@ -455,6 +519,7 @@ class RegularizedGloVe(GloVe):
         return (oloss + regoV*rloss) / ncooc
 
 
+# NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class RegularizedSN(SN, RegularizedGloVe):
 
     def __init__(self, *args, **kwargs):
