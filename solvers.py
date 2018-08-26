@@ -53,6 +53,7 @@ def vocab_count(corpusfile, vocabfile, min_count=1, verbose=True, comm=None):
         with open(vocabfile, 'w') as f:
             for word, count in vocab:
                 f.write(word+' '+str(count)+'\n')
+    checkpoint(comm)
 
 @jit
 def doc2cooc(indices, recip_dist, window_size, V):
@@ -119,6 +120,7 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, co
         with open(coocfile, 'wb') as f:
             for (a, b), c in counts.items():
                 f.write(struct.pack(FMT, a, b, c))
+    checkpoint(comm)
 
 
 class SharedArrayManager:
