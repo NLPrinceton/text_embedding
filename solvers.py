@@ -386,7 +386,7 @@ class GloVe(SharedArrayManager):
           eta: learning rate
           seed: random seed for cooccurrence shuffling
           verbose: write loss and time information
-          cumulative: compute cumulative loss instead of true loss
+          cumulative: compute cumulative loss instead of true loss; ignored if not verbose
         Returns:
           None
         '''
@@ -396,8 +396,8 @@ class GloVe(SharedArrayManager):
 
         if verbose:
             write('\rRunning '+str(epochs)+' Epochs of SGD with Learning Rate '+str(eta)+'\n', comm)
-        if verbose and not cumulative:
-            write('\rInitial Loss='+str(self.loss())+'\n', comm)
+            if not cumulative:
+                write('\rInitial Loss='+str(self.loss())+'\n', comm)
         ncooc = comm.allreduce(self.ncooc)
 
         t = time.time()
