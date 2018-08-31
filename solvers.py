@@ -200,7 +200,10 @@ class SharedArrayManager:
     def __exit__(self, *args):
 
         for array in self._shared:
-            sa.delete(array)
+            try:
+                sa.delete(array)
+            except FileNotFoundError:
+                pass
 
     def create(self, array=None, dtype=None):
 
@@ -557,13 +560,16 @@ def align_params(params, srcvocab, tgtvocab, mean_fill=True):
 
     output = []
     for param in params:
-        shape = param.shape
-        shape[0] = len(tgtvocab)
+        if len(param.shape) == 1:
+            shape = (len(tgtvocab),)
+            default = np.mean(param)
+        else:
+            shape = (len(tgtvocab), param.shape[1])
+            default = np.mean(param, axis=0)
         array = np.empty(shape, dtype=FLOAT)
-        default = np.mean(param, axis=-1)
         if not mean_fill:
             default *= FLOAT(0.0)
-        w2e = dict(zip(srcvocab, params))
+        w2e = dict(zip(srcvocab, param))
         for i, w in enumerate(tgtvocab):
             array[i] = w2e.get(w, default)
         output.append(array)
@@ -597,6 +603,8 @@ def induce_embeddings(srcvocab, srccooc, srcvecs, tgtvocab, tgtcooc, comm=None):
             U = sam.create(U)
         else:
             U = X.dot(srcvecs)
+        U = U[C>0]
+        C = C[C>0]
         start, stop = int(rank/size*Vsrc), int((rank+1)/size*Vsrc)
         U[start:stop] /= C[start:stop, None]
         checkpoint(comm)
@@ -636,8 +644,9 @@ def induce_embeddings(srcvocab, srccooc, srcvecs, tgtvocab, tgtcooc, comm=None):
             U = sam.create(U)
         else:
             U = X.dot(srcvecs)
-        start, stop = int(rank/size*Vtgt), int((rank+1)/size*Vtgt)
-        U[start:stop] /= C[start:stop, None]
+        nz = sum(C>0)
+        start, stop = int(rank/size*nz), int((rank+1)/size*nz)
+        U[C>0][start:stop] /= C[C>0][start:stop, None]
 
         write('Computing Induced Embeddings\n', comm)
         tgtvecs = sam.create(np.zeros((Vtgt, d), dtype=FLOAT))
