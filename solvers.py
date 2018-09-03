@@ -58,12 +58,13 @@ def vocab_count(corpusfile, vocabfile, min_count=1, verbose=True, comm=None):
     checkpoint(comm)
 
 @jit
-def doc2cooc(indices, recip_dist, window_size, V):
+def doc2cooc(indices, weights, window_size, V):
+
     row, col, val = [], [], []
     start = 0
     for i, index in enumerate(indices):
         if index != V:
-            for rd, other in zip(recip_dist[start-i:], indices[start:i]):
+            for w, other in zip(weights[start-i:], indices[start:i]):
                 if other != V:
                     if index < other:
                         row.append(index)
@@ -71,9 +72,26 @@ def doc2cooc(indices, recip_dist, window_size, V):
                     else:
                         row.append(other)
                         col.append(index)
-                    val.append(rd)
+                    val.append(w)
         start += i >= window_size
     return row, col, val
+
+@jit
+def doc2cooc_unweighted(indices, window_size, V):
+    row, col = [], []
+    start = 0
+    for i, index in enumerate(indices):
+        if index != V:
+            for other in indices[start:i]:
+                if other != V:
+                    if index < other:
+                        row.append(index)
+                        col.append(other)
+                    else:
+                        row.append(other)
+                        col.append(index)
+        start += i >= window_size
+    return row, col
 
 def counts2bin(counts, f):
 
@@ -92,13 +110,14 @@ def bin2counts(f, counts, subset):
             counts[(i, j)] += v
 
 # NOTE: Result is highly non-random and contains only upper triangular entries
-def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, comm=None):
+def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, unweighted=False, verbose=True, comm=None):
     '''counts word cooccurrence in a corpus
     Args:
         corpusfile: corpus .txt file
         vocabfile: vocab .txt file
         coocfile: cooccurrence .bin file
         window_size: length of cooccurrence window
+        unweighted: do not weight cooccurrence by distance
         verbose: display progress
         comm: MPI Communicator
     Returns:
@@ -108,7 +127,10 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, co
     rank, size = ranksize(comm)
     with open(vocabfile, 'r') as f:
         word2index = {line.split()[0]: INT(i) for i, line in enumerate(f)}
-    recip_dist = np.fromiter((1.0/d for d in reversed(range(1, window_size+1))), FLOAT, window_size)
+    if unweighted:
+        one = FLOAT(1)
+    else:
+        weights = np.fromiter((1.0/d for d in reversed(range(1, window_size+1))), FLOAT, window_size)
     V = INT(len(word2index))
     counts = Counter()
     if verbose:
@@ -133,11 +155,18 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, co
                     for k, line in enumerate(f):
                         if k%size == rank:
                             doc = line.split()
-                            for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), recip_dist, window_size, V)):
-                                if i in subset:
-                                    counts[(i, j)] += v
-                                else:
-                                    dump[(i, j)] += v
+                            if unweighted:
+                                for i, j in zip(*doc2cooc_unweighted(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), window_size, V)):
+                                    if i in subset:
+                                        counts[(i, j)] += one
+                                    else:
+                                        dump[(i, j)] += one
+                            else:
+                                for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), weights, window_size, V)):
+                                    if i in subset:
+                                        counts[(i, j)] += v
+                                    else:
+                                        dump[(i, j)] += v
                         if not (k+1)%CHUNK:
                             counts2bin(dump, tmp)
                             dump = Counter()
@@ -173,8 +202,12 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, verbose=True, co
         with open(corpusfile, 'r') as f:
             for k, line in enumerate(f):
                 doc = line.split()
-                for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), recip_dist, window_size, V)):
-                    counts[(i, j)] += v
+                if unweighted:
+                    for i, j in zip(*doc2cooc_unweighted(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), window_size, V)):
+                        counts[(i, j)] += one
+                else:
+                    for i, j, v in zip(*doc2cooc(np.fromiter((word2index.get(word, V) for word in doc), INT, len(doc)), weights, window_size, V)):
+                        counts[(i, j)] += v
                 if verbose and not (k+1)%CHUNK:
                     write('\rProcessed '+str(k+1)+' Lines, Time='+str(round(time.time()-t))+' sec')
         if verbose:
@@ -362,7 +395,7 @@ class GloVe(SharedArrayManager):
 
     @staticmethod
     @jit
-    def epoch(row, col, weights, logcoocs, wv, cv, wb, cb, ncooc, eta):
+    def sgd_epoch(row, col, weights, logcoocs, wv, cv, wb, cb, ncooc, eta):
 
         etax2 = FLOAT(2.0*eta)
         loss = FLOAT(0.0)
@@ -407,7 +440,79 @@ class GloVe(SharedArrayManager):
                 write('Epoch '+str(ep+1), comm)
 
             self._shuffle_cooc_data(random.randint(0, 2**32-1))
-            loss = self.epoch(self.row, self.col, self.weights, self.logcooc, *self._params, ncooc, eta)
+            loss = self.sgd_epoch(self.row, self.col, self.weights, self.logcooc, *self._params, ncooc, eta)
+
+            if verbose:
+                loss = comm.allreduce(loss) if cumulative else self.loss()
+            checkpoint(comm)
+            if verbose:
+                write(': Loss='+str(loss)+', Time='+str(round(time.time()-t))+' sec\n', comm)
+                t = time.time()
+
+    @staticmethod
+    @jit
+    def adagrad_epoch(row, col, weights, logcoocs, wv, cv, wb, cb, ssg_wv, ssg_cv, ssg_wb, ssg_cb, ncooc, eta):
+
+        eta = FLOAT(eta)
+        two = FLOAT(2.0)
+        loss = FLOAT(0.0)
+        for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
+            wvi, cvj, wbi, cbj = wv[i], cv[j], wb[i], cb[j]
+            ssg_wvi, ssg_cvj, ssg_wbi, ssg_cbj = ssg_wv[i], ssg_cv[j], ssg_wb[i], ssg_cb[j]
+            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            werror = weight*error
+            coef = two*werror
+            updi = coef*cvj
+            updj = coef*wvi
+            reg_wvi = np.sqrt(ssg_wvi)
+            reg_cvj = np.sqrt(ssg_cvj)
+            ssg_wvi += updi ** 2
+            ssg_cvj += updj ** 2
+            wvi -= eta * updi / reg_wvi
+            cvj -= eta * updj / reg_cvj
+            reg_wbi = np.sqrt(ssg_wbi)
+            reg_cbj = np.sqrt(ssg_cbj)
+            coefsq = coef ** 2
+            ssg_wbi += coefsq
+            ssg_cbj += coefsq
+            coef *= eta
+            wbi -= coef / reg_wbi
+            cbj -= coef / reg_cbj
+            loss += werror*error
+        return loss / ncooc
+
+    def adagrad(self, epochs=25, eta=0.05, seed=None, verbose=True, cumulative=True):
+        '''runs AdaGrad on GloVe objective
+        Args:
+          epochs: number of epochs
+          eta: learning rate
+          seed: random seed for cooccurrence shuffling
+          verbose: write loss and time information
+          cumulative: compute cumulative loss instead of true loss; ignored if not verbose
+        Returns:
+          None
+        '''
+
+        comm, rank, size = self._comm, self._rank, self._size
+        random.seed(seed)
+
+        if not hasattr(self, '_ssg'):
+            self._ssg = [self.create(np.ones(param.shape, dtype=FLOAT)) for param in self._params[:self._numpar]]
+
+        if verbose:
+            write('\rRunning '+str(epochs)+' Epochs of AdaGrad with Learning Rate '+str(eta)+'\n', comm)
+            if not cumulative:
+                write('\rInitial Loss='+str(self.loss())+'\n', comm)
+        ncooc = comm.allreduce(self.ncooc)
+
+        t = time.time()
+        for ep in range(epochs):
+
+            if verbose:
+                write('Epoch '+str(ep+1), comm)
+
+            self._shuffle_cooc_data(random.randint(0, 2**32-1))
+            loss = self.adagrad_epoch(self.row, self.col, self.weights, self.logcooc, *self._params, *self._ssg, ncooc, eta)
 
             if verbose:
                 loss = comm.allreduce(loss) if cumulative else self.loss()
@@ -444,7 +549,7 @@ class SN(GloVe):
 
     @staticmethod
     @jit
-    def epoch(row, col, weights, logcoocs, wv, b, ncooc, eta):
+    def sgd_epoch(row, col, weights, logcoocs, wv, b, ncooc, eta):
 
         etax2 = FLOAT(2.0*eta)
         two = FLOAT(2.0)
@@ -459,6 +564,35 @@ class SN(GloVe):
             upd = (two*coef)*sumij
             wvi -= upd
             wvj -= upd
+            loss += werror * error
+        return loss / ncooc
+
+    @staticmethod
+    @jit
+    def adagrad_epoch(row, col, weights, logcoocs, wv, b, ssg_wv, ssg_b, ncooc, eta):
+
+        eta = FLOAT(eta)
+        two = FLOAT(2.0)
+        loss = FLOAT(0.0)
+        for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
+            wvi, wvj = wv[i], wv[j]
+            ssg_wvi, ssg_wvj = ssg_wv[i], ssg_wv[j]
+            sumij = wvi + wvj
+            error = np.dot(sumij.T, sumij) + b[0] - logcooc
+            werror = weight*error
+            coef = two*werror
+            reg_b = np.sqrt(ssg_b)
+            ssg_b += coef ** 2
+            b -= eta*coef
+            upd = (two*coef)*sumij
+            updsq = upd ** 2
+            reg_wvi = np.sqrt(ssg_wvi)
+            ssg_wvi += updsq
+            reg_wvj = np.sqrt(ssg_wvj)
+            ssg_wvj += updsq
+            upd *= eta
+            wvi -= upd / reg_wvi
+            wvj -= upd / reg_wvj
             loss += werror * error
         return loss / ncooc
 
@@ -497,7 +631,7 @@ class RegularizedGloVe(GloVe):
 
     @staticmethod
     @jit
-    def epoch(row, col, weights, logcoocs, wv, cv, wb, cb, src, reg, wcc, ncooc, eta):
+    def sgd_epoch(row, col, weights, logcoocs, wv, cv, wb, cb, src, reg, wcc, ncooc, eta):
 
         etax2 = FLOAT(2.0*eta)
         two = FLOAT(2.0)
@@ -521,6 +655,44 @@ class RegularizedGloVe(GloVe):
             rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
         return (oloss + regoV*rloss) / ncooc
 
+    @staticmethod
+    @jit
+    def adagrad_epoch(row, col, weights, logcoocs, wv, cv, wb, cb, src, reg, wcc, ssg_wv, ssg_cv, ssg_wb, ssg_cb, ncooc, eta):
+
+        eta = FLOAT(eta)
+        two = FLOAT(2.0)
+        regoV = FLOAT(reg / wcc.shape[0])
+        regcoef = FLOAT(ncooc * regoV)
+        oloss = FLOAT(0.0)
+        rloss = FLOAT(0.0)
+        for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
+            wvi, cvj, wbi, cbj, wcci, wccj = wv[i], cv[j], wb[i], cb[j], wcc[i], wcc[j]
+            ssg_wvi, ssg_cvj, ssg_wbi, ssg_cbj = ssg_wv[i], ssg_cv[j], ssg_wb[i], ssg_cb[j]
+            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            werror = weight*error
+            coef = two*werror
+            diffi = (wvi+cv[i])/two - src[i]
+            diffj = (wv[j]+cvj)/two - src[j]
+            updi = coef*cvj + (regcoef/wcci)*diffi
+            updj = coef*wvi + (regcoef/wccj)*diffj
+            reg_wvi = np.sqrt(ssg_wvi)
+            reg_cvj = np.sqrt(ssg_cvj)
+            ssg_wvi += updi ** 2
+            ssg_cvj += updj ** 2
+            wvi -= eta * updi / reg_wvi
+            cvj -= eta * updj / reg_cvj
+            reg_wbi = np.sqrt(ssg_wbi)
+            reg_cbj = np.sqrt(ssg_cbj)
+            coefsq = coef ** 2
+            ssg_wbi += coefsq
+            ssg_cbj += coefsq
+            coef *= eta
+            wbi -= coef / reg_wbi
+            cbj -= coef / reg_cbj
+            oloss += werror*error
+            rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
+        return (oloss + regoV*rloss) / ncooc
+
 
 # NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class RegularizedSN(SN, RegularizedGloVe):
@@ -531,7 +703,7 @@ class RegularizedSN(SN, RegularizedGloVe):
 
     @staticmethod
     @jit
-    def epoch(row, col, weights, logcoocs, wv, b, src, reg, wcc, ncooc, eta):
+    def sgd_epoch(row, col, weights, logcoocs, wv, b, src, reg, wcc, ncooc, eta):
 
         etax2 = FLOAT(2.0*eta)
         two = FLOAT(2.0)
@@ -555,12 +727,50 @@ class RegularizedSN(SN, RegularizedGloVe):
             rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
         return (oloss + regoV*rloss) / ncooc
 
+    @staticmethod
+    @jit
+    def adagrad_epoch(row, col, weights, logcoocs, wv, b, src, reg, wcc, ssg_wv, ssg_b, ncooc, eta):
+
+        eta = FLOAT(eta)
+        two = FLOAT(2.0)
+        regoV = FLOAT(reg / wcc.shape[0])
+        regcoef = FLOAT(ncooc * regoV)
+        oloss = FLOAT(0.0)
+        rloss = FLOAT(0.0)
+        for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
+            wvi, wvj, wcci, wccj = wv[i], wv[j], wcc[i], wcc[j]
+            ssg_wvi, ssg_wvj = ssg_wv[i], ssg_wv[j]
+            sumij = wvi + wvj
+            error = np.dot(sumij.T, sumij) + b[0] - logcooc
+            werror = weight*error
+            coef = two*werror
+            reg_b = np.sqrt(ssg_b)
+            ssg_b += coef ** 2
+            b -= eta*coef
+            diffi = wvi - src[i]
+            diffj = wvj - src[j]
+            upd = (two*coef)*sumij
+            updi = upd + (regcoef/wcci)*diffi
+            updj = upd + (regcoef/wccj)*diffj
+            regi = np.sqrt(ssg_wvi)
+            regj = np.sqrt(ssg_wvj)
+            ssg_wvi += updi ** 2
+            ssg_wvj += updj ** 2
+            wvi -= eta * updi
+            wvj -= eta * updj
+            oloss += werror*error
+            rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
+        return (oloss + regoV*rloss) / ncooc
+
 
 def align_params(params, srcvocab, tgtvocab, mean_fill=True):
 
     output = []
     for param in params:
         if len(param.shape) == 1:
+            if param.shape[0] == 1:
+                output.append(param)
+                continue
             shape = (len(tgtvocab),)
             default = np.mean(param)
         else:
@@ -661,7 +871,7 @@ def main(args, comm=None):
         vocab_count(args.input, args.vocab, args.min_count, args.verbose, comm)
 
     if args.mode == 'cooc' or args.mode[:4] in 'thru':
-        cooc_count(args.input, args.vocab, args.cooc, args.window_size, args.verbose, comm)
+        cooc_count(args.input, args.vocab, args.cooc, args.window_size, args.unweighted, args.verbose, comm)
 
     Embedding = GloVe if args.mode[-5:] == 'glove' else SN if args.mode[-2:] == 'sn' else None
     if Embedding is None:
@@ -672,7 +882,10 @@ def main(args, comm=None):
     with open(args.vocab, 'r') as f:
         V = len(f.readlines())
     with Embedding(args.cooc, V, args.dimension, alpha=args.alpha, xmax=args.xmax, comm=comm) as E:
-        E.sgd(args.niter, args.eta, verbose=args.verbose)
+        if args.sgd:
+            E.sgd(args.niter, args.eta, verbose=args.verbose)
+        else:
+            E.adagrad(args.niter, args.eta, verbose=args.verbose)
         E.dump(args.output)
 
 def parse():
@@ -685,11 +898,13 @@ def parse():
     parser.add_argument('-o', '--output', help='embedding .bin file')
     parser.add_argument('-m', '--min_count', default=1, help='minimum word count in corpus', type=int)
     parser.add_argument('-w', '--window_size', default=10, help='size of cooccurrence window', type=int)
+    parser.add_argument('-u', '--unweighted', action='store_true', help='no distance weighting')
     parser.add_argument('-d', '--dimension', default=300, help='embedding dimension', type=int)
     parser.add_argument('-x', '--xmax', default=100.0, help='maximum cooccurrence', type=float)
     parser.add_argument('-a', '--alpha', default=0.75, help='weighting exponent', type=float)
+    parser.add_argument('-s', '--sgd', action='store_true', help='use SGD')
     parser.add_argument('-n', '--niter', default=25, help='number of training epochs', type=int)
-    parser.add_argument('-e', '--eta', default=0.01, help='learning rate', type=float)
+    parser.add_argument('-e', '--eta', default=0.05, help='learning rate', type=float)
     parser.add_argument('-v', '--verbose', action='store_true', help='display output')
     return parser.parse_args()
 
