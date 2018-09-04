@@ -384,6 +384,7 @@ class GloVe(SharedArrayManager):
 
         row, col = self.row, self.col
         ncooc = self.ncooc
+        checkpoint(self._comm)
         params = self._params[:self._numpar]
         predict = self.predict
         errors = np.fromiter((predict(i, j, *params) for i, j in zip(row, col)), FLOAT, ncooc) - self.logcooc
