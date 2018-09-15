@@ -312,10 +312,11 @@ class GloVe(SharedArrayManager):
         data[~mask] = FLOAT(1.0)
         self.weights = data
         self.ncooc = data.shape[0]
+        self.cooc_data = [self.row, self.col, self.weights, self.logcooc]
 
     def _shuffle_cooc_data(self, seed):
 
-        for data in [self.row, self.col, self.weights, self.logcooc]:
+        for data in self.cooc_data:
             np.random.seed(seed)
             np.random.shuffle(data)
 
@@ -338,14 +339,14 @@ class GloVe(SharedArrayManager):
     def __init__(self, coocfile, V=None, d=None, seed=None, init=None, alpha=0.75, xmax=100.0, comm=None):
         '''
         Args:
-          coocfile: binary cooccurrence file (assumed to have only upper triangular entries)
-          V: vocab size
-          d: vector dimension
-          seed: random seed for initializing vectors
-          init: tuple of numpy arrays to initialize parameters
-          alpha: GloVe weighting parameter
-          xmax: GloVe max cooccurrence parameter
-          comm: MPI Communicator
+            coocfile: binary cooccurrence file (assumed to have only upper triangular entries)
+            V: vocab size
+            d: vector dimension
+            seed: random seed for initializing vectors
+            init: tuple of numpy arrays to initialize parameters
+            alpha: GloVe weighting parameter
+            xmax: GloVe max cooccurrence parameter
+            comm: MPI Communicator
         '''
 
         super().__init__(comm=comm)
