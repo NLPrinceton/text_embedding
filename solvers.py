@@ -312,11 +312,11 @@ class GloVe(SharedArrayManager):
         data[~mask] = FLOAT(1.0)
         self.weights = data
         self.ncooc = data.shape[0]
-        self.cooc_data = [self.row, self.col, self.weights, self.logcooc]
+        self._cooc_data = [self.row, self.col, self.weights, self.logcooc]
 
     def _shuffle_cooc_data(self, seed):
 
-        for data in self.cooc_data:
+        for data in self._cooc_data:
             np.random.seed(seed)
             np.random.shuffle(data)
 
@@ -442,7 +442,7 @@ class GloVe(SharedArrayManager):
                 write('Epoch '+str(ep+1), comm)
 
             self._shuffle_cooc_data(random.randint(0, 2**32-1))
-            loss = self.sgd_epoch(self.row, self.col, self.weights, self.logcooc, *self._params, ncooc, eta)
+            loss = self.sgd_epoch(*self._cooc_data, *self._params, ncooc, eta)
 
             if verbose:
                 loss = comm.allreduce(loss) if cumulative else self.loss()
@@ -514,7 +514,7 @@ class GloVe(SharedArrayManager):
                 write('Epoch '+str(ep+1), comm)
 
             self._shuffle_cooc_data(random.randint(0, 2**32-1))
-            loss = self.adagrad_epoch(self.row, self.col, self.weights, self.logcooc, *self._params, *self._ssg, ncooc, eta)
+            loss = self.adagrad_epoch(*self._cooc_data, *self._params, *self._ssg, ncooc, eta)
 
             if verbose:
                 loss = comm.allreduce(loss) if cumulative else self.loss()
