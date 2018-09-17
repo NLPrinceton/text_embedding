@@ -8,6 +8,7 @@ from collections import Counter
 from collections import deque
 from operator import itemgetter
 from tempfile import NamedTemporaryFile as NTF
+import h5py
 import numpy as np
 import SharedArray as sa
 from numba import jit
@@ -362,24 +363,39 @@ class GloVe(SharedArrayManager):
 
         return sum(self._params[:2]) / FLOAT(2.0)
 
-    def dump(self, f):
+    def dump(self, fid):
         '''dumps GloVe embeddings to binary file
         Args:
-            f: open file object or filename string
+            fid: open file object or filename string
         Returns:
             None
         '''
 
         if not self._rank:
-            self.embeddings().tofile(f)
+            self.embeddings().tofile(fid)
+
+    _pnames = ['wv', 'cv', 'wb', 'cb']
+    _numpar = 4
+
+    def save(self, fid):
+        '''saves parameters to HDF5 file
+        Args:
+            fid: filename string
+        Returns:
+            None
+        '''
+
+        if not self._rank:
+            f = h5py.File(fid)
+            for name, param in zip(self._pnames, self._params[:self._numpar]):
+                f.create_dataset(name, data=param)
+            f.close()
 
     @staticmethod
     @jit
     def predict(i, j, wv, cv, wb, cb):
         
       return np.dot(wv[i].T, cv[j])+wb[i]+cb[j]
-
-    _numpar = 4
 
     def loss(self):
 
@@ -540,14 +556,15 @@ class SN(GloVe):
         
         return self._params[0]
 
+    _pnames = ['wv', 'b']
+    _numpar = 2
+
     @staticmethod
     @jit
     def predict(i, j, wv, b):
         
         sumij = wv[i] + wv[j]
         return np.dot(sumij.T, sumij) + b[0]
-
-    _numpar = 2
 
     @staticmethod
     @jit
