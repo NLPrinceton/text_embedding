@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 from text_embedding.documents import *
 
@@ -24,6 +25,21 @@ def Sent2Vec(order='uni'):
   assert PYTHONVERSION == '3', "Python 3 must be used for Sent2Vec"
   get_sentence_embeddings = importlib.import_module('model-Sent2Vec.build').get_sentence_embeddings
   return lambda documents: get_sentence_embeddings(documents, ngram=order), None, True
+
+
+def quickthoughts(channel='uni'):
+  assert PYTHONVERSION == '2', "Python 2 must be used for quickthoughts"
+  EncoderManager = importlib.import_module('model-quickthoughts.encoder_manager').EncoderManager
+  configuration = importlib.import_module('model-quickthoughts.configuration')
+  encoder = EncoderManager()
+  with open('text_embedding/model-quickthoughts/'+channel+'.json', 'r') as f:
+      cfg = json.load(f)
+      if type(cfg) == dict:
+          cfg = [cfg]
+  for config in cfg:
+      model_config = configuration.model_config(config, mode="encode")
+      encoder.load_model(model_config)
+  return lambda documents: np.nan_to_num(encoder.encode(documents, use_eos=True)), None, True
 
 
 if __name__ == '__main__':
