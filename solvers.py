@@ -418,15 +418,15 @@ class GloVe(SharedArrayManager):
         etax2 = FLOAT(2.0*eta)
         loss = FLOAT(0.0)
         for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
-            wvi, cvj, wbi, cbj = wv[i], cv[j], wb[i], cb[j]
-            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            wvi, cvj = wv[i], cv[j]
+            error = np.dot(wvi.T, cvj) + wb[i] + cb[j] - logcooc
             werror = weight*error
             coef = werror*etax2
             upd = coef*cvj
             cvj -= coef*wvi
             wvi -= upd
-            wbi -= coef
-            cbj -= coef
+            wb[i] -= coef
+            cb[j] -= coef
             loss += werror*error
         return loss / ncooc
 
@@ -475,9 +475,9 @@ class GloVe(SharedArrayManager):
         two = FLOAT(2.0)
         loss = FLOAT(0.0)
         for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
-            wvi, cvj, wbi, cbj = wv[i], cv[j], wb[i], cb[j]
-            ssg_wvi, ssg_cvj, ssg_wbi, ssg_cbj = ssg_wv[i], ssg_cv[j], ssg_wb[i], ssg_cb[j]
-            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            wvi, cvj = wv[i], cv[j]
+            ssg_wvi, ssg_cvj = ssg_wv[i], ssg_cv[j]
+            error = np.dot(wvi.T, cvj) + wb[i] + cb[j] - logcooc
             werror = weight*error
             coef = two*werror
             updi = coef*cvj
@@ -488,14 +488,14 @@ class GloVe(SharedArrayManager):
             ssg_cvj += updj ** 2
             wvi -= eta * updi / reg_wvi
             cvj -= eta * updj / reg_cvj
-            reg_wbi = np.sqrt(ssg_wbi)
-            reg_cbj = np.sqrt(ssg_cbj)
+            reg_wbi = np.sqrt(ssg_wb[i])
+            reg_cbj = np.sqrt(ssg_cb[j])
             coefsq = coef ** 2
-            ssg_wbi += coefsq
-            ssg_cbj += coefsq
+            ssg_wb[i] += coefsq
+            ssg_cb[j] += coefsq
             coef *= eta
-            wbi -= coef / reg_wbi
-            cbj -= coef / reg_cbj
+            wb[i] -= coef / reg_wbi
+            cb[j] -= coef / reg_cbj
             loss += werror*error
         return loss / ncooc
 
@@ -659,8 +659,8 @@ class RegularizedGloVe(GloVe):
         oloss = FLOAT(0.0)
         rloss = FLOAT(0.0)
         for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
-            wvi, cvj, wbi, cbj, wcci, wccj = wv[i], cv[j], wb[i], cb[j], wcc[i], wcc[j]
-            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            wvi, cvj, wcci, wccj = wv[i], cv[j], wcc[i], wcc[j]
+            error = np.dot(wvi.T, cvj) + wb[i] + cb[j] - logcooc
             werror = weight*error
             coef = werror*etax2
             diffi = (wvi+cv[i])/two - src[i]
@@ -668,8 +668,8 @@ class RegularizedGloVe(GloVe):
             upd = coef*cvj + (regcoef/wcci)*diffi
             cvj -= coef*wvi + (regcoef/wccj)*diffj
             wvi -= upd
-            wbi -= coef
-            cbj -= coef
+            wb[i] -= coef
+            cb[j] -= coef
             oloss += werror*error
             rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
         return (oloss + regoV*rloss) / ncooc
@@ -685,9 +685,9 @@ class RegularizedGloVe(GloVe):
         oloss = FLOAT(0.0)
         rloss = FLOAT(0.0)
         for i, j, weight, logcooc in zip(row, col, weights, logcoocs):
-            wvi, cvj, wbi, cbj, wcci, wccj = wv[i], cv[j], wb[i], cb[j], wcc[i], wcc[j]
-            ssg_wvi, ssg_cvj, ssg_wbi, ssg_cbj = ssg_wv[i], ssg_cv[j], ssg_wb[i], ssg_cb[j]
-            error = np.dot(wvi.T, cvj) + wbi + cbj - logcooc
+            wvi, cvj, wcci, wccj = wv[i], cv[j], wcc[i], wcc[j]
+            ssg_wvi, ssg_cvj = ssg_wv[i], ssg_cv[j]
+            error = np.dot(wvi.T, cvj) + wb[i] + cb[j] - logcooc
             werror = weight*error
             coef = two*werror
             diffi = (wvi+cv[i])/two - src[i]
@@ -700,14 +700,14 @@ class RegularizedGloVe(GloVe):
             ssg_cvj += updj ** 2
             wvi -= eta * updi / reg_wvi
             cvj -= eta * updj / reg_cvj
-            reg_wbi = np.sqrt(ssg_wbi)
-            reg_cbj = np.sqrt(ssg_cbj)
+            reg_wbi = np.sqrt(ssg_wb[i])
+            reg_cbj = np.sqrt(ssg_cb[j])
             coefsq = coef ** 2
-            ssg_wbi += coefsq
-            ssg_cbj += coefsq
+            ssg_wb[i] += coefsq
+            ssg_cb[j] += coefsq
             coef *= eta
-            wbi -= coef / reg_wbi
-            cbj -= coef / reg_cbj
+            wb[i] -= coef / reg_wbi
+            cb[j] -= coef / reg_cbj
             oloss += werror*error
             rloss += np.dot(diffi.T, diffi)/wcci + np.dot(diffj.T, diffj)/wccj
         return (oloss + regoV*rloss) / ncooc
