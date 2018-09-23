@@ -10,9 +10,7 @@ from operator import itemgetter
 from tempfile import NamedTemporaryFile as NTF
 import h5py
 import numpy as np
-import SharedArray as sa
 from numba import jit
-from scipy import sparse as sp
 from sklearn.linear_model import LinearRegression as LR
 from text_embedding.documents import *
 
@@ -236,6 +234,8 @@ class SharedArrayManager:
 
     def __exit__(self, *args):
 
+        import SharedArray as sa
+
         for array in self._shared:
             try:
                 sa.delete(array)
@@ -243,6 +243,8 @@ class SharedArrayManager:
                 pass
 
     def create(self, array=None, dtype=None):
+
+        import SharedArray as sa
 
         comm, rank = self._comm, self._rank
 
@@ -808,6 +810,8 @@ def align_params(params, srcvocab, tgtvocab, mean_fill=True):
     return output
 
 def induce_embeddings(srcvocab, srccooc, srcvecs, tgtvocab, tgtcooc, comm=None):
+
+    from scipy import sparse as sp
 
     rank, size = ranksize(comm)
     Vsrc, d = srcvecs.shape
