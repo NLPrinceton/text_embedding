@@ -54,7 +54,7 @@ def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', object
   '''constructs matrix of word vectors
   Args:
     vocabulary: dict mapping strings to indices, or iterable of strings, or int specifying vocab size; if None loads all words in vectorfile
-    random: type ('Gaussian' or 'Rademacher') of random vectors to use; if None uses pretrained vectors
+    random: type ('Gaussian' or 'Rademacher') of random vectors to use; if None uses pretrained vectors; if tuple (low, high) uses uniform distribution over [low, high)
     vectorfile: word embedding text file; ignored if not random is None
     corpus: corpus used to train embeddings; ignored if not random is None or not vectorfile is None
     objective: objective used to train embeddings; ignored if not random is None or not vectorfile is None
@@ -85,7 +85,9 @@ def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', object
 
     if not type(vocabulary) == int:
       vocabulary = len(vocabulary)
-    if random.lower() == 'gaussian':
+    if type(random) == tuple:
+      return np.random.uniform(*random, size=(vocabulary, dimension)).astype(FLOAT)
+    elif random.lower() == 'gaussian':
       matrix = np.random.normal(scale=1.0/np.sqrt(dimension), size=(vocabulary, dimension)).astype(FLOAT)
     elif random.lower() == 'rademacher':
       return (2.0*np.random.randint(2, size=(vocabulary, dimension)).astype(FLOAT)-1.0)/np.sqrt(dimension)

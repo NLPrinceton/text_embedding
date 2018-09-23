@@ -25,7 +25,7 @@ FMT = 'iif'
 NBYTES = 12
 
 
-def vocab_count(corpusfile, vocabfile, min_count=1, verbose=True, comm=None):
+def vocab_count(corpusfile, vocabfile=None, min_count=1, verbose=True, comm=None):
     '''counts word occurrences to determine vocabulary
     Args:
         corpusfile: corpus .txt file
@@ -34,7 +34,7 @@ def vocab_count(corpusfile, vocabfile, min_count=1, verbose=True, comm=None):
         verbose: display progress
         comm: MPI Communicator
     Returns:
-        None
+        [(word, count)] list if vocabfile is None ; else None
     '''
 
     rank, size = ranksize(comm)
@@ -53,6 +53,9 @@ def vocab_count(corpusfile, vocabfile, min_count=1, verbose=True, comm=None):
         vocab = sorted((item for item in counts.items() if item[1] >= min_count), key=itemgetter(1), reverse=True)
         if verbose:
             write('Counted '+str(len(vocab))+' Words, Time='+str(round(time.time()-t))+' sec\n')
+        if vocabfile is None:
+            checkpoint(comm)
+            return vocab
         with open(vocabfile, 'w') as f:
             for word, count in vocab:
                 f.write(word+' '+str(count)+'\n')
