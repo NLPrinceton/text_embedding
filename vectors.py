@@ -79,7 +79,7 @@ def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', object
       for word, vector in load(vectorfile, vocabulary, dimension):
         matrix[vocabulary[word]] = vector
     else:
-      matrix = np.vstack(load(vectorfile, vocabulary, dimension))
+      matrix = np.vstack(vector for _, vector in load(vectorfile, vocabulary, dimension))
   
   else:
 
