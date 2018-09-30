@@ -218,7 +218,7 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, unweighted=False
             counts2bin(counts, f)
 
 
-def full2ut(inputfile, outputfile):
+def reformat_coocfile(inputfile, outputfile):
     '''converts full-matrix cooccurrence file upper-triangular cooccurrence file
     Args:
         inputfile: full-matrix binary cooccurrence file with index starting at 1 in format "int,int,double" (as created by original GloVe code)
@@ -229,7 +229,13 @@ def full2ut(inputfile, outputfile):
 
     with open(inputfile, 'rb') as f:
         with open(outputfile, 'wb') as g:
-            g.write(struct.pack(FMT, *struct.unpack(f.read(16))))
+            while True:
+                try:
+                    i, j, d = struct.unpack('iid', f.read(16))
+                except struct.error:
+                    break
+                if i <= j:
+                    g.write(struct.pack(FMT, INT(i-1), INT(j-1), FLOAT(d)))
 
 
 # NOTE: Open using 'with ... as' to prevent too many open POSIX files

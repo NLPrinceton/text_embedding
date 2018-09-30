@@ -8,7 +8,7 @@ from sklearn.preprocessing import normalize
 
 FLOAT = np.float32
 # NOTE: filepath for Common Crawl GloVe embeddings goes here
-VECTORFILES = {('CC', 'GloVe', 300): '/n/fs/nlpdatasets/glove.840B/glove.840B.300d.txt'}
+CCGLOVE = '/n/fs/nlpdatasets/glove.840B/glove.840B.300d.txt'
 
 
 # NOTE: Some files have 2d or 2d+2 numbers on each line, with the last d of them being meaningless; avoid loading them by setting dimension=d
@@ -24,7 +24,8 @@ def load(vectorfile, vocabulary=None, dimension=None):
 
   try:
     f = h5py.File(vectorfile, 'r')
-    for word, vector in zip(f['words'], f['vectors']):
+    words, vectors = np.array(f['words']), np.array(f['vectors'])
+    for word, vector in zip(words, vectors):
       if vocabulary is None or word in vocabulary:
         yield word, vector
     f.close()
@@ -45,7 +46,7 @@ def load(vectorfile, vocabulary=None, dimension=None):
         index = line.index(' ')
         word = line[:index]
         if vocabulary is None or word in vocabulary:
-          yield word, np.fromstring(line[index+1:], dtype=FLOAT, count=dimension)
+          yield word, np.fromstring(line[index+1:], dtype=FLOAT, count=dimension, sep=' ')
           n += 1
         if n == V:
           break
@@ -64,18 +65,18 @@ def text2hdf5(textfile, hdf5file, **kwargs):
   words, vectors = zip(*load(textfile, **kwargs))
   f = h5py.File(hdf5file)
   f.create_dataset('words', (len(words),), dtype=h5py.special_dtype(vlen=str))
+  for i, word in enumerate(words):
+      f['words'][i] = word
   f.create_dataset('vectors', data=np.vstack(vectors))
   f.close()
 
 
-def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', objective='GloVe', dimension=300, unit=True):
+def vocab2mat(vocabulary=None, random=None, vectorfile=CCGLOVE, dimension=None, unit=True):
   '''constructs matrix of word vectors
   Args:
     vocabulary: dict mapping strings to indices, or iterable of strings, or int specifying vocab size; if None loads all words in vectorfile
     random: type ('Gaussian' or 'Rademacher') of random vectors to use; if None uses pretrained vectors; if tuple (low, high) uses uniform distribution over [low, high)
     vectorfile: word embedding text file; ignored if not random is None
-    corpus: corpus used to train embeddings; ignored if not random is None or not vectorfile is None
-    objective: objective used to train embeddings; ignored if not random is None or not vectorfile is None
     dimension: embedding dimension
     unit: normalize embeddings
   Returns:
@@ -83,11 +84,10 @@ def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', object
   '''
 
   assert random is None or not vocabulary is None, "needs vocabulary size information for random vectors"
+  assert random is None or not dimension is None, "needs dimension information for random vectors"
 
   if random is None:
 
-    if vectorfile is None:
-      vectorfile = VECTORFILES[(corpus, objective, dimension)]
     if type(vocabulary) == set:
       vocabulary = sorted(vocabulary)
     if type(vocabulary) == list:
@@ -117,14 +117,12 @@ def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', object
   return matrix
 
 
-def vocab2vecs(vocabulary=None, random=None, vectorfile=None, corpus='CC', objective='GloVe', dimension=300, unit=True):
+def vocab2vecs(vocabulary=None, random=None, vectorfile=CCGLOVE, dimension=None, unit=True):
   '''constructs dict mapping words to vectors
   Args:
     vocabulary: iterable of strings, or int specifying vocab size; if None loads all words in vectorfile
     random: type ('Gaussian' or 'Rademacher') of random vectors to use; if None uses pretrained vectors
     vectorfile: word embedding text file; ignored if not random is None
-    corpus: corpus used to train embeddings; ignored if not random is None or not vectorfile is None
-    objective: objective used to train embeddings; ignored if not random is None or not vectorfile is None
     dimension: embedding dimension
     unit: normalize embeddings
   Returns:
@@ -134,8 +132,6 @@ def vocab2vecs(vocabulary=None, random=None, vectorfile=None, corpus='CC', objec
   assert random is None or not (vocabulary is None or type(vocabulary) == int), "needs word information for random vectors"
 
   if random is None:
-    if vectorfile is None:
-      vectorfile = VECTORFILES[(corpus, objective, dimension)]
     if unit:
       return {word: vector/norm(vector) for word, vector in load(vectorfile, vocabulary, dimension)}
     return dict(load(vectorfile, vocabulary, dimension))
