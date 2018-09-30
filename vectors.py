@@ -37,6 +37,7 @@ def load(vectorfile, vocabulary=None, dimension=None):
       vocabulary = None
     else:
       V = len(vocabulary)
+    dimension = -1 if dimension is None else dimension
 
     with open(vectorfile, 'r') as f:
       n = 0
@@ -44,10 +45,27 @@ def load(vectorfile, vocabulary=None, dimension=None):
         index = line.index(' ')
         word = line[:index]
         if vocabulary is None or word in vocabulary:
-          yield word, np.array([FLOAT(entry) for entry in line[index+1:].split()[:dimension]])
+          yield word, np.fromstring(line[index+1:], dtype=FLOAT, count=dimension)
           n += 1
         if n == V:
           break
+
+
+def text2hdf5(textfile, hdf5file, **kwargs):
+  '''converts word embeddings file from text to HDF5 format
+  Args:
+      textfile: word embeddings file in format "word float ... float\n"
+      hdf5file: output file ; will have keys 'words' and 'vectors'
+      kwargs: passed to load
+  Returns:
+      None
+  '''
+
+  words, vectors = zip(*load(textfile, **kwargs))
+  f = h5py.File(hdf5file)
+  f.create_dataset('words', (len(words),), dtype=h5py.special_dtype(vlen=str))
+  f.create_dataset('vectors', data=np.vstack(vectors))
+  f.close()
 
 
 def vocab2mat(vocabulary=None, random=None, vectorfile=None, corpus='CC', objective='GloVe', dimension=300, unit=True):

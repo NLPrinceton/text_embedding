@@ -218,6 +218,20 @@ def cooc_count(corpusfile, vocabfile, coocfile, window_size=10, unweighted=False
             counts2bin(counts, f)
 
 
+def full2ut(inputfile, outputfile):
+    '''converts full-matrix cooccurrence file upper-triangular cooccurrence file
+    Args:
+        inputfile: full-matrix binary cooccurrence file with index starting at 1 in format "int,int,double" (as created by original GloVe code)
+        outputfile: ouput binary file
+    Returns:
+        None
+    '''
+
+    with open(inputfile, 'rb') as f:
+        with open(outputfile, 'wb') as g:
+            g.write(struct.pack(FMT, *struct.unpack(f.read(16))))
+
+
 # NOTE: Open using 'with ... as' to prevent too many open POSIX files
 class SharedArrayManager:
 
