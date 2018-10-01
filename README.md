@@ -1,6 +1,7 @@
 # text_embedding
 
-This repository contains a fast, scalable, highly-parallel Python implementation of the GloVe [1] algorithm for word embeddings (found in <tt>solvers.py</tt>) as well as code and scripts to recreate downstream-task results for [unsupervised DisC embeddings](https://openreview.net/forum?id=B1e5ef-C-&noteId=B1e5ef-C-).
+This repository contains a fast, scalable, highly-parallel Python implementation of the GloVe [1] algorithm for word embeddings (found in <tt>solvers.py</tt>) as well as code and scripts to recreate downstream-task results for [unsupervised DisC embedding paper](https://openreview.net/forum?id=B1e5ef-C-&noteId=B1e5ef-C-).
+An overview of the latter is provided in this [blog post](http://www.offconvex.org/2018/06/25/textembeddings/) at OffConvex.
 
 If you find this code useful please cite the following:
   
