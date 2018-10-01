@@ -8,10 +8,9 @@ from collections import Counter
 from collections import deque
 from operator import itemgetter
 from tempfile import NamedTemporaryFile as NTF
-import h5py
+import SharedArray as sa
 import numpy as np
 from numba import jit
-from sklearn.linear_model import LinearRegression as LR
 from text_embedding.documents import *
 
 
@@ -254,8 +253,6 @@ class SharedArrayManager:
 
     def __exit__(self, *args):
 
-        import SharedArray as sa
-
         for array in self._shared:
             try:
                 sa.delete(array)
@@ -263,8 +260,6 @@ class SharedArrayManager:
                 pass
 
     def create(self, array=None, dtype=None):
-
-        import SharedArray as sa
 
         comm, rank = self._comm, self._rank
 
@@ -409,6 +404,8 @@ class GloVe(SharedArrayManager):
         Returns:
             None
         '''
+
+        import h5py
 
         if not self._rank:
             f = h5py.File(fid)
@@ -832,6 +829,7 @@ def align_params(params, srcvocab, tgtvocab, mean_fill=True):
 def induce_embeddings(srcvocab, srccooc, srcvecs, tgtvocab, tgtcooc, comm=None):
 
     from scipy import sparse as sp
+    from sklearn.linear_model import LinearRegression as LR
 
     rank, size = ranksize(comm)
     Vsrc, d = srcvecs.shape

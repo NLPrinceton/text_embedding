@@ -19,9 +19,9 @@ On a 32-core computer, 25 epochs of AdaGrad run in 3.8 hours on Wikipedia cooccu
 
 Note that our code takes as input an upper-triangular, zero-indexed cooccurrence matrix rather than the full, one-indexed cooccurrence matrix used by the original GloVe code. To convert to our (more disk-memory efficient) version you can use the method <tt>reformat_coocfile</tt> in <tt>solvers.py</tt>. We also allow direct, parallel computation of the vocab and cooccurrence files.
 
-Dependencies: NumPy, [SharedArray](https://pypi.org/project/SharedArray/)
+Dependencies: numpy, numba, [SharedArray](https://pypi.org/project/SharedArray/)
 
-Optional: h5py, mpi4py*, scikit-learn
+Optional: h5py, mpi4py*, scipy, scikit-learn
 
 \* required for parallelism; [MPI](http://www.mpich.org/downloads/) can be easily installed on Linux, Mac, and Windows Subsystem for Linux
 
@@ -29,7 +29,7 @@ Optional: h5py, mpi4py*, scikit-learn
 
 Scripts to recreate the results in the paper are provided in the directory <tt>scripts-AKSV2018</tt>. 1600-dimensional GloVe embeddings trained on the Amazon Product Corpus [3] are provided [here](http://nlp.cs.princeton.edu/DisC/amazon_glove1600.txt.bz2).
 
-Dependencies: NLTK, NumPy, SciPy, scikit-learn
+Dependencies: nltk, numpy, scipy, scikit-learn
 
 Optional: tensorflow    
 
