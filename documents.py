@@ -186,6 +186,19 @@ def trec(partitions=['train', 'test'], splitlabel=True):
   return [csv2clf(DOCUMENTS+'trec_'+partition+'.csv', splitlabel=splitlabel) for partition in partitions]
 
 
+def dbpedia(partitions=['train', 'test']):
+  '''loads DBpedia ontology dataset from a comma separated file (ignores the title)
+  Args:
+    partitions: component(s) of data to load; can be a string (for one partition) or list of strings
+  Returns:
+    ((list of documents, list of labels) for each partition)
+  '''
+
+  if type(partitions) == str:
+    return csv2clf(DOCUMENTS+'dbpedia_'+partitions+'.csv', delimiter=',')
+  return [csv2clf(DOCUMENTS+'dbpedia_'+partition+'.csv', delimiter=',') for partition in partitions]
+
+
 def txt2clf(*args):
   '''loads datasets with labels split by filename
   Args:
@@ -326,7 +339,7 @@ def sts(partitions=['train', 'test']):
   return [sts(partition) for partition in partitions]
 
 
-TASKMAP = {'train-test split': {'sst': sst, 'sst_fine': sst_fine, 'imdb': imdb, 'ng': ng, 'trec': trec},
+TASKMAP = {'train-test split': {'sst': sst, 'sst_fine': sst_fine, 'imdb': imdb, 'ng': ng, 'trec': trec, 'dbpedia': dbpedia},
            'cross-validation': {'mr': mr, 'cr': cr, 'subj': subj, 'mpqa': mpqa},
            'pairwise task': {'sick_e': sick_e, 'sick_r': sick_r, 'mrpc': mrpc, 'sts': sts}}
 
