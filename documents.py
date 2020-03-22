@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegressionCV as LogitCV
 from sklearn.linear_model import RidgeCV
 from sklearn.metrics import f1_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.neighbors import NearestCentroid
 from sklearn.preprocessing import normalize
 
 
@@ -185,6 +186,19 @@ def trec(partitions=['train', 'test'], splitlabel=True):
   return [csv2clf(DOCUMENTS+'trec_'+partition+'.csv', splitlabel=splitlabel) for partition in partitions]
 
 
+def dbpedia(partitions=['train', 'test']):
+  '''loads DBpedia ontology dataset from a comma separated file (ignores the title)
+  Args:
+    partitions: component(s) of data to load; can be a string (for one partition) or list of strings
+  Returns:
+    ((list of documents, list of labels) for each partition)
+  '''
+
+  if type(partitions) == str:
+    return csv2clf(DOCUMENTS+'dbpedia_'+partitions+'.csv', delimiter=',')
+  return [csv2clf(DOCUMENTS+'dbpedia_'+partition+'.csv', delimiter=',') for partition in partitions]
+
+
 def txt2clf(*args):
   '''loads datasets with labels split by filename
   Args:
@@ -325,7 +339,7 @@ def sts(partitions=['train', 'test']):
   return [sts(partition) for partition in partitions]
 
 
-TASKMAP = {'train-test split': {'sst': sst, 'sst_fine': sst_fine, 'imdb': imdb, 'ng': ng, 'trec': trec},
+TASKMAP = {'train-test split': {'sst': sst, 'sst_fine': sst_fine, 'imdb': imdb, 'ng': ng, 'trec': trec, 'dbpedia': dbpedia},
            'cross-validation': {'mr': mr, 'cr': cr, 'subj': subj, 'mpqa': mpqa},
            'pairwise task': {'sick_e': sick_e, 'sick_r': sick_r, 'mrpc': mrpc, 'sts': sts}}
 
@@ -350,7 +364,7 @@ def batched_build(documents, transform, info=(), root='', batchsize=None):
   return np.vstack(transform(documents[offset:offset+batchsize], *info) for i, offset in enumerate(offsets) if not root or write(root+' Batch '+str(i+1)+'/'+str(len(offsets))+20*' '))
 
 
-def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, verbose=False, params=[10**i for i in range(-2, 3)], intercept=False, n_folds=2, n_jobs=-1, random_state=0):
+def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, verbose=False, params=[10**i for i in range(-2, 3)], intercept=False, n_folds=2, n_jobs=-1, random_state=0, mean_clf=False):
   '''evaluates representation method on given task
   Args:
     task: string name of task
@@ -364,6 +378,7 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
     n_folds: number of folds to use when cross-validating
     n_jobs: number of threads to run when cross-validating
     random_state: cross-validation seed
+    mean_clf: use mean classifier instead of logit
   Returns:
     if accuracy task: (train acc, test acc); if regression: (Pearson r, Spearman rho); if retrieval: (acc, F1)
   '''
@@ -379,9 +394,12 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
     root = '\rBuilding '+task.upper()+' Test' if verbose else ''
     Xtest = batched_build(dtest, represent, info, root, batchsize)
     Ytest = np.array(ltest)
-    clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*Xtrain.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
-    if verbose:
-      write('\rCross-Validating and Fitting '+task.upper()+10*' ')
+    if mean_clf:
+        clf = NearestCentroid()
+    else:
+        clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*Xtrain.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
+        if verbose:
+          write('\rCross-Validating and Fitting '+task.upper()+10*' ')
     clf.fit(Xtrain, Ytrain)
     train = 100.0*clf.score(Xtrain, Ytrain)
     test = 100.0*clf.score(Xtest, Ytest)
@@ -396,9 +414,12 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
       root = '\rBuilding '+task.upper() if verbose else ''
       X = batched_build(documents, represent, info, root, batchsize)
       for i, (tr, te) in enumerate(StratifiedKFold(n_splits=10, random_state=random_state).split(X, Y)):
-        if verbose:
-          write('\rCross-Validating and Fitting '+task.upper()+' Fold '+str(i+1)+10*' ')
-        clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*X.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
+        if mean_clf:
+            clf = NearestCentroid()
+        else:
+            if verbose:
+              write('\rCross-Validating and Fitting '+task.upper()+' Fold '+str(i+1)+10*' ')
+            clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*X.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
         clf.fit(X[tr], Y[tr])
         train += clf.score(X[tr], Y[tr])
         test += clf.score(X[te], Y[te])
@@ -408,9 +429,12 @@ def evaluate(task, represent, prepare=None, batchsize=None, invariant=False, ver
         Xtrain = batched_build([documents[i] for i in tr], represent, info, root, batchsize)
         root = '\rBuilding '+task.upper()+' Fold '+str(i+1)+' Test' if verbose else ''
         Xtest = batched_build([documents[i] for i in te], represent, info, root, batchsize)
-        if verbose:
-          write('\rCross-Validating and Fitting '+task.upper()+' Fold '+str(i+1)+10*' ')
-        clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*Xtrain.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
+        if mean_clf:
+            clf = NearestCentroid()
+        else:
+            if verbose:
+              write('\rCross-Validating and Fitting '+task.upper()+' Fold '+str(i+1)+10*' ')
+            clf = LogitCV(Cs=params, fit_intercept=intercept, cv=n_folds, dual=np.less(*Xtrain.shape), solver='liblinear', n_jobs=n_jobs, random_state=random_state)
         clf.fit(Xtrain, Y[tr])
         train += clf.score(Xtrain, Y[tr])
         test += clf.score(Xtest, Y[te])
