@@ -1,3 +1,4 @@
+import sys
 import h5py
 import numpy as np
 from numpy.linalg import norm
@@ -251,3 +252,9 @@ def average_cosine_similarity(X, Y):
   '''
 
   return np.mean((normalize(X) * normalize(Y)).sum(1))
+
+
+if __name__ == '__main__':
+
+    fname1, fname2 = sys.argv[1:]
+    text2hdf5(fname1, fname2)
